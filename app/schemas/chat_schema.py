@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List
+from typing import List, Literal
 from datetime import datetime
 
 class Message(BaseModel):
@@ -12,7 +12,10 @@ class ChatSessionCreate(BaseModel):
     timestamp: datetime
 
 class ChatSessionResponse(BaseModel):
-    id: str
-    user_id: str
-    messages: List[Message]
-    createdAt: datetime
+    content: str
+    sender: Literal["Assistant"]
+    timestamp: datetime
+
+class ChatMessageResponse(BaseModel):
+    message: str
+    timestamp: datetime

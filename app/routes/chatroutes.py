@@ -24,6 +24,31 @@ from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 # )
 
 router = APIRouter()
+
+from bson import ObjectId
+from datetime import datetime
+from fastapi import HTTPException
+
+@router.get("/chat/session", response_model=ChatSessionResponse, dependencies=[Depends(JWTBearer())])
+async def get_user_chat_session(user: UserSchema = Depends(get_current_user_from_token)):
+    session = await db["chat_sessions"].find_one({"user_id": user.id})
+
+    if not session:
+        return {
+            "id": "",
+            "user_id": user.id,
+            "messages": [],
+            "createdAt": datetime.now(timezone.utc)
+        }
+
+    return {
+        "id": str(session["_id"]),
+        "user_id": session["user_id"],
+        "messages": session["messages"],
+        "createdAt": session["createdAt"]
+    }
+
+
 @router.post("/chat/session", response_model=ChatSessionResponse, dependencies=[Depends(JWTBearer())])
 async def create_chat_session(session: ChatSessionCreate, user: UserSchema = Depends(get_current_user_from_token)):
     now = datetime.now(timezone.utc)
@@ -33,7 +58,7 @@ async def create_chat_session(session: ChatSessionCreate, user: UserSchema = Dep
     chroma_db = Chroma(
     persist_directory="data",
     embedding_function=OpenAIEmbeddings(),
-    collection_name="capstone"
+    collection_name="certificates1"
     )
 
     # Embed query and get relevant context
@@ -43,6 +68,8 @@ async def create_chat_session(session: ChatSessionCreate, user: UserSchema = Dep
     # Retrieve or initialize session
     existing_session = await db["chat_sessions"].find_one({"user_id": user.id})
 
+    # print("Existing session:", existing_session)
+
     chat_history = []
     if existing_session:
         for msg in existing_session.get("messages", []):
@@ -50,22 +77,37 @@ async def create_chat_session(session: ChatSessionCreate, user: UserSchema = Dep
                 chat_history.append(HumanMessage(content=msg["content"]))
             else:
                 chat_history.append(AIMessage(content=msg["content"]))
-
+    # print("Chat history:", chat_history)
     # Build and send prompt to LLM
     prompt = """
-    Answer the user query based on the context and analyze the chat history when required.
-    If the answer doesn't exist in the context or chat history, say "I don't know."
-    If the answer is related to chat history, give an appropriate answer.
+        You help the user let them choose a certification based on the context provided. You are not allowed to use any knowledge other than the context provided.
+        Answer the user query based on the context and analyzie the chat history when required.
+        if the answer dosent exist in the context and chat history then say i dont know
+        if the answer is related to chat history then give an appropriate answer.
 
-    context: {context}
+        Format answers in proper format with links, prices and resources from the context provided.
+        If you dont have information about the query which user asked. In the context provided then you should say i dont know.
+
+        give response in a proper and clean markdown format.
+
+        context: {context}
     """
     template = ChatPromptTemplate.from_messages([
         ("system", prompt),
         MessagesPlaceholder("history"),
         ("human", "{question}")
     ])
+
+    print("Chat history:", chat_history)
+
     llm = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0.8)
-    res = llm.invoke(template.format(question=query, history=chat_history, context=context))
+    prompt_value = template.invoke({
+    "question": query,
+    "history": chat_history,
+    "context": context
+    })
+    res = llm.invoke(prompt_value)
+
 
     # Append both user and assistant message to chat_history
     new_chat_entries = [
@@ -89,7 +131,7 @@ async def create_chat_session(session: ChatSessionCreate, user: UserSchema = Dep
                 "$set": {"updatedAt": now}
             }
         )
-        updated_session = await db["chat_sessions"].find_one({"_id": existing_session["_id"]})
+        await db["chat_sessions"].find_one({"_id": existing_session["_id"]})
     else:
         session_data = {
             "createdAt": now,
@@ -97,12 +139,10 @@ async def create_chat_session(session: ChatSessionCreate, user: UserSchema = Dep
             "user_id": user.id,
             "messages": new_chat_entries
         }
-        result = await db["chat_sessions"].insert_one(session_data)
-        updated_session = await db["chat_sessions"].find_one({"_id": result.inserted_id})
+        await db["chat_sessions"].insert_one(session_data)
 
     return {
-        "id": str(updated_session["_id"]),
-        "user_id": updated_session["user_id"],
-        "messages": updated_session["messages"],
-        "createdAt": updated_session["createdAt"]
+            "content": res.content,
+            "sender": "Assistant",
+            "timestamp": datetime.now(timezone.utc)
     }
