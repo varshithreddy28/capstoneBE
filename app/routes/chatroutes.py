@@ -98,8 +98,6 @@ async def create_chat_session(session: ChatSessionCreate, user: UserSchema = Dep
         ("human", "{question}")
     ])
 
-    print("Chat history:", chat_history)
-
     llm = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0.8)
     prompt_value = template.invoke({
     "question": query,
