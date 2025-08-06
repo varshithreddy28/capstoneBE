@@ -86,7 +86,8 @@ async def create_chat_session(session: ChatSessionCreate, user: UserSchema = Dep
         if the answer is related to chat history then give an appropriate answer.
 
         Format answers in proper format with links, prices and resources from the context provided.
-        If you dont have information about the query which user asked. In the context provided then you should say i dont know.
+        If you dont have information about the query which user asked in the context provided then you should say i dont know.
+        While providing the links dont trim any link give the exact link from the context.
 
         give response in a proper and clean markdown format.
 
